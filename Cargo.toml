@@ -7,3 +7,23 @@ license = "Apache-2.0 OR MIT"
 description = "An implementation of the USB ECM class in usb-device"
 
 [dependencies]
+usb-device = "0.2.7"
+smoltcp = { version = "0.7.0", optional = true, default-features = false, features = [
+  "log",
+  # NOTE: These need to be included in smoltcp to build. This should not be the case
+  "ethernet",
+  "proto-dhcpv4",
+] }
+
+hex = { version = "0.4.2", default-features = false }
+log = { version = "0.4.14", default-features = false }
+
+[dev-dependencies]
+pretty_env_logger = "0.4.0"
+smoltcp = "0.7.0"
+
+
+[features]
+# TODO: Alloc feature
+default = ["smoltcp", "large_pkgs"]
+large_pkgs = []
