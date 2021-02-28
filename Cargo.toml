@@ -3,5 +3,7 @@ name = "usbd-ecm"
 version = "0.0.0"
 authors = ["Leon Tan <leon.arian.tan@gmail.com>"]
 edition = "2018"
+license = "Apache-2.0 OR MIT"
+description = "An implementation of the USB ECM class in usb-device"
 
 [dependencies]
