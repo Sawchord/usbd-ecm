@@ -48,3 +48,5 @@ impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
         }
     }
 }
+
+// TODO: Implement Debug
