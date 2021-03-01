@@ -13,8 +13,9 @@ const CDC_PROTOCOL_NONE: u8 = 0x00;
 
 const CS_INTERFACE: u8 = 0x24;
 const CDC_TYPE_HEADER: u8 = 0x00;
-const CDC_TYPE_CALL_MANAGEMENT: u8 = 0x01;
-const CDC_TYPE_ACM: u8 = 0x02;
+//const CDC_TYPE_CALL_MANAGEMENT: u8 = 0x01;
+//const CDC_TYPE_ACM: u8 = 0x02;
+const ETHERNET_FUNCTIONAL_DESCRIPTOR: u8 = 0x0F;
 const CDC_TYPE_UNION: u8 = 0x06;
 
 //const REQ_SEND_ENCAPSULATED_COMMAND: u8 = 0x00;
@@ -72,7 +73,26 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
             ],
         )?;
 
-        // TODO Ethernet functional descriptor
+        // Ethernet functional descriptor
+        writer.write(
+            CS_INTERFACE,
+            &[
+                ETHERNET_FUNCTIONAL_DESCRIPTOR,
+                // String index of the MAC address
+                self.mac_string_index.into(),
+                // Ethernet Statstics capabilities (None)
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                // wMaxSegmentSize - 1514 bytes
+                0xEA,
+                0x05,
+                // wNumberMCFilters - No multicast filering
+                0x00,
+                0x00,
+            ],
+        )?;
 
         // Communications endpoint descriptor
         writer.endpoint(&self.comm_ep)?;
@@ -100,6 +120,7 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
 }
 
 impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
+    /// Create e new [`CdcEcmClass`](CdcEcmClass)
     pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
         // Generat the mac string as a bytes sequence
         let mut mac_str = [0; 12];
