@@ -5,7 +5,8 @@ use usb_device::{
     bus::{StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
     descriptor::DescriptorWriter,
-    Result as UsbResult,
+    endpoint::EndpointAddress,
+    Result as UsbResult, UsbError,
 };
 
 pub(crate) mod ecm;
@@ -36,27 +37,78 @@ pub struct UsbEthernetDevice<'a, B: UsbBus> {
     ecm: CdcEcmClass<'a, B>,
     tx_buf: [u8; ETH_FRAME_SIZE],
     tx_idx: usize,
+    tx_len: usize,
     rx_buf: [u8; ETH_FRAME_SIZE],
     rx_idx: usize,
+    rx_complete: bool,
 }
 
 impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
+    /// Create a new [`UsbEthernetDevice`]('UsbEthernetDevice').
     pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
         Self {
             ecm: CdcEcmClass::new(alloc, mac_addr),
             tx_buf: [0; ETH_FRAME_SIZE],
             tx_idx: 0,
+            tx_len: 0,
             rx_buf: [0; ETH_FRAME_SIZE],
             rx_idx: 0,
+            rx_complete: false,
+        }
+    }
+
+    /// Tries to receive data into rx_buffer
+    fn try_recv(&mut self) {
+        // Do not receive, if there is an ethernet packet waiting
+        // The pipe will stall until the ethernet packet gets processed.
+        if self.rx_complete {
+            return;
+        }
+
+        let idx = self.rx_idx;
+        match self.ecm.get_read_ep().read(&mut self.rx_buf[idx..]) {
+            Ok(bytes_written) => {
+                // Advance the index into the reveive buffer
+                self.rx_idx += bytes_written;
+
+                // If the received packet is short, the packet was
+                // received completely
+                if bytes_written < EP_PKG_USIZE {
+                    self.rx_complete = true;
+                }
+            }
+            // This can only be triggered by a bug on the host side
+            Err(UsbError::BufferOverflow) => {
+                log::warn!("received more data than fits in one ethernet packet, dropping packet");
+                self.rx_idx = 0;
+            }
+            // If busy, try again later
+            // FIXME: Should be possible to trigger this, remove?
+            Err(UsbError::WouldBlock) => {
+                log::warn!("would block should not be possible")
+            }
+            Err(err) => {
+                log::error!("unexpected usb error: {:?}", err);
+                self.reset();
+            }
         }
     }
 }
 
 impl<B: UsbBus> UsbClass<B> for UsbEthernetDevice<'_, B> {
+    fn endpoint_out(&mut self, addr: EndpointAddress) {
+        if addr == self.ecm.get_read_ep().address() {
+            self.try_recv();
+        }
+    }
+
     // TODO: Handling of the Endpoints
 
     fn reset(&mut self) {
-        // TODO: Clear buffer states
+        self.tx_idx = 0;
+        self.tx_len = 0;
+        self.rx_idx = 0;
+        self.rx_complete = false;
     }
 
     // Pass through the control and setup calls
