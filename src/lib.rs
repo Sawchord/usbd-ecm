@@ -57,7 +57,35 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
         }
     }
 
-    /// Tries to receive data into rx_buffer
+    /// Check, wether an ethernet frame is ready to be received
+    pub fn frame_ready(&self) -> bool {
+        self.rx_complete
+    }
+
+    /// Tries to receive an ethernet frame.
+    ///
+    /// If a frame is ready, the closure will be executed, which allows to copy out the etherenet frame.
+    ///
+    /// # Returns
+    /// - `true`: if a packet was pulled
+    /// - `false`: otherwise
+    pub fn try_receive_frame<F>(&mut self, f: F) -> bool
+    where
+        F: FnOnce(&[u8]),
+    {
+        if self.rx_complete {
+            let idx = self.rx_idx;
+            f(&self.rx_buf[..idx]);
+            self.rx_idx = 0;
+
+            self.rx_complete = false;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Attempts to receive data into rx_buffer
     fn try_recv(&mut self) {
         // Do not receive, if there is an ethernet packet waiting
         // The pipe will stall until the ethernet packet gets processed.
@@ -67,17 +95,17 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
 
         let idx = self.rx_idx;
         match self.ecm.get_read_ep().read(&mut self.rx_buf[idx..]) {
-            Ok(bytes_written) => {
+            Ok(bytes_read) => {
                 // Advance the index into the reveive buffer
-                self.rx_idx += bytes_written;
+                self.rx_idx += bytes_read;
 
                 // If the received packet is short, the packet was
                 // received completely
-                if bytes_written < EP_PKG_USIZE {
+                if bytes_read < EP_PKG_USIZE {
                     self.rx_complete = true;
                 }
             }
-            // This can only be triggered by a bug on the host side
+            // This can only be triggered by a a host ingoring our boundaries
             Err(UsbError::BufferOverflow) => {
                 log::warn!("received more data than fits in one ethernet packet, dropping packet");
                 self.rx_idx = 0;
@@ -92,6 +120,11 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
                 self.reset();
             }
         }
+    }
+
+    /// Attempts to write data out to the host
+    fn _try_send(&mut self) {
+        todo!()
     }
 }
 
