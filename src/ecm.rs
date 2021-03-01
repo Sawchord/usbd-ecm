@@ -14,10 +14,8 @@ const CDC_PROTOCOL_NONE: u8 = 0x00;
 
 const CS_INTERFACE: u8 = 0x24;
 const CDC_TYPE_HEADER: u8 = 0x00;
-//const CDC_TYPE_CALL_MANAGEMENT: u8 = 0x01;
-//const CDC_TYPE_ACM: u8 = 0x02;
-const ETHERNET_FUNCTIONAL_DESCRIPTOR: u8 = 0x0F;
 const CDC_TYPE_UNION: u8 = 0x06;
+const ETHERNET_FUNCTIONAL_DESCRIPTOR: u8 = 0x0F;
 
 // CDC Class requests
 const REQ_SEND_ENCAPSULATED_COMMAND: u8 = 0x00;
@@ -49,6 +47,43 @@ pub struct CdcEcmClass<'a, B: UsbBus> {
 }
 
 // TODO: Implement Debug
+
+impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
+    /// Create e new [`CdcEcmClass`](CdcEcmClass)
+    pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
+        // Generat the mac string as a bytes sequence
+        let mut mac_str = [0; 12];
+        hex::decode_to_slice(mac_addr, &mut mac_str).unwrap();
+
+        Self {
+            comm_if: alloc.interface(),
+            comm_ep: alloc.interrupt(64, 255),
+            data_if: alloc.interface(),
+            read_ep: alloc.bulk(EP_PKG_SIZE),
+            write_ep: alloc.bulk(EP_PKG_SIZE),
+
+            mac_string_index: alloc.string(),
+            mac_string: mac_str,
+        }
+    }
+
+    /// Checks, whether this request was directed to this class
+    fn is_for_me(&self, req: &Request) -> bool {
+        req.request_type == RequestType::Class
+            && req.recipient == Recipient::Interface
+            && req.index == u8::from(self.comm_if) as u16
+    }
+
+    /// Get the in endpoint
+    pub fn get_write_ep(&self) -> &'a EndpointIn<B> {
+        &self.write_ep
+    }
+
+    /// Get the out endpoint
+    pub fn get_read_ep(&self) -> &'a EndpointOut<B> {
+        &self.read_ep
+    }
+}
 
 impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
     fn get_configuration_descriptors(&self, writer: &mut DescriptorWriter) -> UsbResult<()> {
@@ -187,32 +222,5 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
                 xfer.reject().ok();
             }
         }
-    }
-}
-
-impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
-    /// Create e new [`CdcEcmClass`](CdcEcmClass)
-    pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
-        // Generat the mac string as a bytes sequence
-        let mut mac_str = [0; 12];
-        hex::decode_to_slice(mac_addr, &mut mac_str).unwrap();
-
-        Self {
-            comm_if: alloc.interface(),
-            comm_ep: alloc.interrupt(64, 255),
-            data_if: alloc.interface(),
-            read_ep: alloc.bulk(EP_PKG_SIZE),
-            write_ep: alloc.bulk(EP_PKG_SIZE),
-
-            mac_string_index: alloc.string(),
-            mac_string: mac_str,
-        }
-    }
-
-    /// Checks, whether this request was directed to this class
-    fn is_for_me(&self, req: &Request) -> bool {
-        req.request_type == RequestType::Class
-            && req.recipient == Recipient::Interface
-            && req.index == u8::from(self.comm_if) as u16
     }
 }
