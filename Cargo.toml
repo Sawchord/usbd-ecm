@@ -26,6 +26,7 @@ smoltcp = "0.7.0"
 
 
 [features]
-# TODO: Alloc feature
+# TODO: Alloc feature uses vecs instead of fixed arrays
 default = ["smoltcp", "large_pkgs"]
 large_pkgs = []
+

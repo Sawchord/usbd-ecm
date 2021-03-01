@@ -162,7 +162,8 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
     fn get_string(&self, index: StringIndex, _lang_id: u16) -> Option<&str> {
         // If the mac address is requested, we return it as a str
         if index == self.mac_string_index {
-            Some(core::str::from_utf8(&self.mac_string).unwrap())
+            // We know that this is valid because of the output of the hex library
+            Some(unsafe { core::str::from_utf8_unchecked(&self.mac_string) })
         } else {
             None
         }
