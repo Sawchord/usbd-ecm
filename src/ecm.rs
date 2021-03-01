@@ -2,6 +2,7 @@ use crate::{EP_PKG_SIZE, USB_CLASS_CDC};
 use usb_device::{
     bus::{InterfaceNumber, StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
+    control::{Recipient, Request, RequestType},
     descriptor::DescriptorWriter,
     endpoint::{EndpointIn, EndpointOut},
     Result as UsbResult,
@@ -18,8 +19,22 @@ const CDC_TYPE_HEADER: u8 = 0x00;
 const ETHERNET_FUNCTIONAL_DESCRIPTOR: u8 = 0x0F;
 const CDC_TYPE_UNION: u8 = 0x06;
 
-//const REQ_SEND_ENCAPSULATED_COMMAND: u8 = 0x00;
-//const REQ_GET_ENCAPSULATED_COMMAND: u8 = 0x01;
+// CDC Class requests
+const REQ_SEND_ENCAPSULATED_COMMAND: u8 = 0x00;
+const REQ_GET_ENCAPSULATED_COMMAND: u8 = 0x01;
+
+// CDC ECM Class requests Section 6.2 in CDC ECM spec
+const SET_ETHERNET_MULTICAST_FILTERS: u8 = 0x40;
+const SET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER: u8 = 0x41;
+const GET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER: u8 = 0x42;
+const SET_ETHERNET_PACKET_FILTER: u8 = 0x43;
+const GET_ETHERNET_STATISTICS: u8 = 0x44;
+
+// CDC ECM Class notification codes, Section 6.3 in CDC ECM spec
+// NOT IMPLEMENTED
+//const NETWORK_CONNECTION: u8 = 0x00;
+//const RESPONSE_AVAILABLE: u8 = 0x01;
+//const CONNECTION_SPEED_CHANGE: u8 = 0x2A;
 
 pub struct CdcEcmClass<'a, B: UsbBus> {
     comm_if: InterfaceNumber,
@@ -106,7 +121,7 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
         // Data OUT endpoint descriptor
         writer.endpoint(&self.read_ep)?;
 
-        todo!()
+        Ok(())
     }
 
     fn get_string(&self, index: StringIndex, _lang_id: u16) -> Option<&str> {
@@ -115,6 +130,62 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
             Some(core::str::from_utf8(&self.mac_string).unwrap())
         } else {
             None
+        }
+    }
+
+    fn control_in(&mut self, xfer: ControlIn<B>) {
+        let req = xfer.request();
+        if !self.is_for_me(req) {
+            return;
+        }
+
+        match req.request {
+            REQ_GET_ENCAPSULATED_COMMAND => {
+                log::error!("encapsulated commands are not supported");
+                xfer.reject().ok();
+            }
+            GET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER => {
+                log::error!("power management not supported");
+                xfer.reject().ok();
+            }
+            GET_ETHERNET_STATISTICS => {
+                log::error!("statistics not supported");
+                xfer.reject().ok();
+            }
+            _ => {
+                log::error!("rejecting unkown IN request code {}", req.request);
+                xfer.reject().ok();
+            }
+        }
+    }
+
+    fn control_out(&mut self, xfer: ControlOut<B>) {
+        let req = xfer.request();
+        if !self.is_for_me(req) {
+            return;
+        }
+
+        match req.request {
+            REQ_SEND_ENCAPSULATED_COMMAND => {
+                log::error!("encapsulated commands are not supported");
+                xfer.reject().ok();
+            }
+            SET_ETHERNET_MULTICAST_FILTERS => {
+                // TODO: Implement this mandatory feature
+                log::error!("ethernet multicast filters are not supported");
+                xfer.reject().ok();
+            }
+            SET_ETHERNET_PACKET_FILTER => {
+                log::error!("ethernet packet filters are not supported");
+                xfer.reject().ok();
+            }
+            SET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER => {
+                log::error!("power management not supported");
+            }
+            _ => {
+                log::error!("rejecting unkown OUT request code {}", req.request);
+                xfer.reject().ok();
+            }
         }
     }
 }
@@ -136,5 +207,12 @@ impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
             mac_string_index: alloc.string(),
             mac_string: mac_str,
         }
+    }
+
+    /// Checks, whether this request was directed to this class
+    fn is_for_me(&self, req: &Request) -> bool {
+        req.request_type == RequestType::Class
+            && req.recipient == Recipient::Interface
+            && req.index == u8::from(self.comm_if) as u16
     }
 }
