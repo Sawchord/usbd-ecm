@@ -1,9 +1,9 @@
-use crate::{CdcEcmClass, USB_CLASS_CDC};
+use crate::{EP_PKG_SIZE, USB_CLASS_CDC};
 use usb_device::{
-    bus::{StringIndex, UsbBus},
+    bus::{InterfaceNumber, StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
     descriptor::DescriptorWriter,
-    //endpoint::{EndpointIn, EndpointOut},
+    endpoint::{EndpointIn, EndpointOut},
     Result as UsbResult,
 };
 
@@ -19,6 +19,20 @@ const CDC_TYPE_UNION: u8 = 0x06;
 
 //const REQ_SEND_ENCAPSULATED_COMMAND: u8 = 0x00;
 //const REQ_GET_ENCAPSULATED_COMMAND: u8 = 0x01;
+
+pub struct CdcEcmClass<'a, B: UsbBus> {
+    comm_if: InterfaceNumber,
+    comm_ep: EndpointIn<'a, B>,
+    data_if: InterfaceNumber,
+    read_ep: EndpointOut<'a, B>,
+    write_ep: EndpointIn<'a, B>,
+
+    mac_string_index: StringIndex,
+    mac_string: [u8; 12],
+    // TODO: Add buffer stuff
+}
+
+// TODO: Implement Debug
 
 impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
     fn get_configuration_descriptors(&self, writer: &mut DescriptorWriter) -> UsbResult<()> {
@@ -83,10 +97,23 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
             None
         }
     }
-
-    fn reset(&mut self) {
-        // TODO: Clean all buffers and reset state, once it exists
-    }
 }
 
-impl<B: UsbBus> CdcEcmClass<'_, B> {}
+impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
+    pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
+        // Generat the mac string as a bytes sequence
+        let mut mac_str = [0; 12];
+        hex::decode_to_slice(mac_addr, &mut mac_str).unwrap();
+
+        Self {
+            comm_if: alloc.interface(),
+            comm_ep: alloc.interrupt(64, 255),
+            data_if: alloc.interface(),
+            read_ep: alloc.bulk(EP_PKG_SIZE),
+            write_ep: alloc.bulk(EP_PKG_SIZE),
+
+            mac_string_index: alloc.string(),
+            mac_string: mac_str,
+        }
+    }
+}
