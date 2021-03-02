@@ -64,7 +64,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
 
     /// Tries to receive an ethernet frame.
     ///
-    /// If a frame is ready, the closure will be executed, which allows to copy out the etherenet frame.
+    /// If a frame is ready, the closure will be executed, which allows to copy out the ethernet frame.
     ///
     /// # Returns
     /// - `true`: if a packet was pulled
@@ -85,9 +85,9 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
         }
     }
 
-    /// Attempts to receive data into rx_buffer
+    /// Attempts to receive data into rx_buf
     fn try_recv(&mut self) {
-        // Do not receive, if there is an ethernet packet waiting
+        // Do not receive if there is an ethernet packet waiting
         // The pipe will stall until the ethernet packet gets processed.
         if self.rx_complete {
             return;
@@ -112,9 +112,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             }
             // If busy, try again later
             // FIXME: Should be possible to trigger this, remove?
-            Err(UsbError::WouldBlock) => {
-                log::warn!("would block should not be possible")
-            }
+            Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
             Err(err) => {
                 log::error!("unexpected usb error: {:?}", err);
                 self.reset();
@@ -122,8 +120,87 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
         }
     }
 
-    /// Attempts to write data out to the host
-    fn _try_send(&mut self) {
+    /// Tries to send an ethernet frame
+    ///
+    /// If the device is ready to send a frame, the closue is executed to allow to copy in the bytes.
+    ///
+    /// # Returns
+    /// - `true`, if the packet was sent
+    /// - `false` otherwise
+    pub fn try_send_frame<F>(&mut self, f: F, len: usize) -> bool
+    where
+        F: FnOnce(&mut [u8]),
+    {
+        // If length to big, we simply return
+        if len >= ETH_FRAME_SIZE {
+            return false;
+        }
+
+        // Check that we are currently not in the process of sending another frame
+        if self.tx_len != 0 {
+            return false;
+        }
+
+        f(&mut self.tx_buf[..len]);
+
+        self.tx_idx = 0;
+        self.tx_len = len;
+
+        self.try_send();
+        true
+    }
+
+    /// Attempts to write data out to the host from tx_buf
+    fn try_send(&mut self) {
+        // Skip if there is no data to send
+        if self.tx_len == 0 {
+            return;
+        }
+
+        // If we have already send everything and ended directly on the
+        // packet size, we need to send an empty packet
+        if self.tx_len == self.tx_idx {
+            match self.ecm.get_write_ep().write(&[]) {
+                Ok(_) => {
+                    // Sending of frame complete, reset transmit part
+                    self.tx_len = 0;
+                    self.tx_idx = 0;
+                }
+                Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
+                Err(err) => {
+                    log::error!("received unexpected error {:?}", err);
+                    self.reset();
+                }
+            }
+
+            return;
+        }
+
+        // Otherwise, calculate the section to send
+        let bytes_to_send = EP_PKG_USIZE.min(self.tx_len - self.tx_idx);
+        let idx = self.tx_idx;
+        let idx_end = idx + bytes_to_send;
+
+        match self.ecm.get_write_ep().write(&self.tx_buf[idx..idx_end]) {
+            Ok(bytes_written) if bytes_to_send == bytes_to_send => {
+                self.tx_idx += bytes_written;
+
+                // End the transaction here, because we have sent a short byte
+                if bytes_written < EP_PKG_USIZE {
+                    self.tx_idx = 0;
+                    self.tx_len = 0;
+                }
+            }
+            Ok(bytes_written) => {
+                log::error!("wrote {} bytes, expected {}", bytes_written, bytes_to_send);
+                self.reset();
+            }
+            Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
+            Err(err) => {
+                log::error!("received unexpected error {:?}", err);
+                self.reset();
+            }
+        }
         todo!()
     }
 }
@@ -135,13 +212,18 @@ impl<B: UsbBus> UsbClass<B> for UsbEthernetDevice<'_, B> {
         }
     }
 
-    // TODO: Handling of the Endpoints
+    fn endpoint_in_complete(&mut self, addr: EndpointAddress) {
+        if addr == self.ecm.get_write_ep().address() {
+            self.try_send();
+        }
+    }
 
     fn reset(&mut self) {
-        self.tx_idx = 0;
-        self.tx_len = 0;
-        self.rx_idx = 0;
-        self.rx_complete = false;
+        // TODO: How to do this threadsafe?
+        //self.tx_idx = 0;
+        //self.tx_len = 0;
+        //self.rx_idx = 0;
+        //self.rx_complete = false;
     }
 
     // Pass through the control and setup calls
