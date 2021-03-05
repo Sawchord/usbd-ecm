@@ -43,7 +43,6 @@ pub struct CdcEcmClass<'a, B: UsbBus> {
 
     mac_string_index: StringIndex,
     mac_string: [u8; 12],
-    // TODO: Add buffer stuff
 }
 
 // TODO: Implement Debug
@@ -53,11 +52,11 @@ impl<'a, B: UsbBus> CdcEcmClass<'a, B> {
     pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
         // Generat the mac string as a bytes sequence
         let mut mac_str = [0; 12];
-        hex::decode_to_slice(mac_addr, &mut mac_str).unwrap();
+        hex::encode_to_slice(mac_addr, &mut mac_str).unwrap();
 
         Self {
             comm_if: alloc.interface(),
-            comm_ep: alloc.interrupt(64, 255),
+            comm_ep: alloc.interrupt(8, 255),
             data_if: alloc.interface(),
             read_ep: alloc.bulk(EP_PKG_SIZE),
             write_ep: alloc.bulk(EP_PKG_SIZE),

@@ -26,7 +26,7 @@ const EP_PKG_SIZE: u16 = 512;
 const EP_PKG_USIZE: usize = EP_PKG_SIZE as usize;
 
 /// Length of an ethernet frame
-const ETH_FRAME_SIZE: usize = 1514;
+pub const ETH_FRAME_SIZE: usize = 1514;
 
 /// The device class of this device.
 pub const USB_CLASS_CDC: u8 = 0x02;
@@ -67,9 +67,9 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
     /// If a frame is ready, the closure will be executed, which allows to copy out the ethernet frame.
     ///
     /// # Returns
-    /// - `true`: if a packet was pulled
-    /// - `false`: otherwise
-    pub fn try_receive_frame<F>(&mut self, f: F) -> bool
+    /// - the length of the frame, if a frame was received
+    /// - `None`: otherwise
+    pub fn try_receive_frame<F>(&mut self, f: F) -> Option<usize>
     where
         F: FnOnce(&[u8]),
     {
@@ -79,9 +79,9 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             self.rx_idx = 0;
 
             self.rx_complete = false;
-            true
+            Some(idx)
         } else {
-            false
+            None
         }
     }
 
@@ -127,7 +127,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
     /// # Returns
     /// - `true`, if the packet was sent
     /// - `false` otherwise
-    pub fn try_send_frame<F>(&mut self, f: F, len: usize) -> bool
+    pub fn try_send_frame<F>(&mut self, len: usize, f: F) -> bool
     where
         F: FnOnce(&mut [u8]),
     {
