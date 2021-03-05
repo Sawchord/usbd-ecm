@@ -140,6 +140,8 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
                 // wNumberMCFilters - No multicast filering
                 0x00,
                 0x00,
+                // bNumberPowerFilters - No Wakeup feature
+                0x00,
             ],
         )?;
 
