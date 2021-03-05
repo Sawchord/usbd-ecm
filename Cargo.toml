@@ -30,3 +30,6 @@ smoltcp = "0.7.0"
 default = ["smoltcp", "large_pkgs"]
 large_pkgs = []
 
+[examples]
+name = "loopback"
+bin = "examples/loopback.rs"
