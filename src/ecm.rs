@@ -151,11 +151,11 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
         // Data interface descriptor
         writer.interface(self.data_if, USB_CLASS_CDC_DATA, 0x00, 0x00)?;
 
-        // Data IN endpoint descriptor
-        writer.endpoint(&self.write_ep)?;
-
         // Data OUT endpoint descriptor
         writer.endpoint(&self.read_ep)?;
+
+        // Data IN endpoint descriptor
+        writer.endpoint(&self.write_ep)?;
 
         Ok(())
     }
@@ -218,6 +218,7 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
             }
             SET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER => {
                 log::error!("power management not supported");
+                xfer.reject().ok();
             }
             _ => {
                 log::error!("rejecting unkown OUT request code {}", req.request);
