@@ -48,15 +48,25 @@ impl<'a> Device<'a> for SmolUsb<'a> {
    }
 
    fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
+      // Try to acquire both buffers
+      // Only proceed, if there is a frame ready and also no output transmission
       match (self.rx_buf.try_lock(), self.tx_buf.try_lock()) {
-         (Some(rx_guard), Some(tx_guard)) => Some((UsbRxToken(rx_guard), UsbTxToken(tx_guard))),
+         (Some(rx_buf), Some(tx_buf)) => match (rx_buf.frame_complete(), tx_buf.is_sending()) {
+            (true, false) => Some((UsbRxToken(rx_buf), UsbTxToken(tx_buf))),
+            _ => None,
+         },
          _ => None,
       }
    }
 
    fn transmit(&'a mut self) -> Option<Self::TxToken> {
+      // Try to acquire the tx buffer
+      // Return early, if there is a sending in progress
       match self.tx_buf.try_lock() {
-         Some(tx_guard) => Some(UsbTxToken(tx_guard)),
+         Some(tx_buf) => match tx_buf.is_sending() {
+            false => Some(UsbTxToken(tx_buf)),
+            true => None,
+         },
          None => None,
       }
    }
@@ -67,21 +77,25 @@ impl<'a> SmolUsb<'a> {}
 pub struct UsbTxToken<'a>(Guard<'a, TxBufInner>);
 
 impl<'a> TxToken for UsbTxToken<'a> {
-   fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> SmolResult<R>
+   fn consume<R, F>(mut self, _timestamp: Instant, len: usize, f: F) -> SmolResult<R>
    where
       F: FnOnce(&mut [u8]) -> SmolResult<R>,
    {
-      todo!()
+      // We know that we are ready to send, because we checked
+      // and have not released the lock since
+      f(self.0.try_send_frame(len).unwrap())
    }
 }
 
 pub struct UsbRxToken<'a>(Guard<'a, RxBufInner>);
 
 impl<'a> RxToken for UsbRxToken<'a> {
-   fn consume<R, F>(self, _timestamp: Instant, f: F) -> SmolResult<R>
+   fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> SmolResult<R>
    where
       F: FnOnce(&mut [u8]) -> SmolResult<R>,
    {
-      todo!()
+      // We know that we have a frame ready because we checked
+      // and have not released the lock since.
+      f(self.0.try_get_frame().unwrap())
    }
 }

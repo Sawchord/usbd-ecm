@@ -26,12 +26,12 @@ impl RxBufInner {
 
    /// If a frame is ready, it is returned.
    /// Returns `None` oterhwise
-   pub fn try_get_frame(&self) -> Option<&[u8]> {
+   pub fn try_get_frame(&mut self) -> Option<&mut [u8]> {
       match self.frame_complete() {
          false => None,
          true => {
             let idx = self.idx;
-            Some(&self.buf[..idx])
+            Some(&mut self.buf[..idx])
          }
       }
    }
