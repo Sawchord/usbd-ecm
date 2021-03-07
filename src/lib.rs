@@ -188,7 +188,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
                 log::error!("wrote {} bytes, expected {}", bytes_written, pkg.len());
                 //self.reset();
             }
-            Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
+            Err(UsbError::WouldBlock) => (),
             Err(err) => {
                 log::error!("received unexpected error {:?}", err);
                 //self.reset();
@@ -233,5 +233,11 @@ impl<B: UsbBus> UsbClass<B> for UsbEthernetDevice<'_, B> {
 
     fn control_out(&mut self, xfer: ControlOut<B>) {
         self.ecm.control_out(xfer);
+    }
+
+    fn poll(&mut self) {
+        // NOTE: We can not trigger try_send from the `smoltcp` side.
+        // Therefore we rely on poll to pick up and send out the data
+        self.try_send()
     }
 }

@@ -169,7 +169,7 @@ pub use sync::*;
 #[cfg(feature = "smoltcp")]
 mod sync {
    use super::*;
-   use crate::lock::{Guard, Lock};
+   use crate::lock::{Guard, Lock, LockHandle};
 
    /// Structure holds and manages the receive side.
    #[derive(Debug)]
@@ -186,6 +186,10 @@ mod sync {
 
       pub fn lock_mut(&self) -> Option<Guard<RxBufInner>> {
          self.0.try_lock()
+      }
+
+      pub fn get_handle(&self) -> LockHandle<RxBufInner> {
+         self.0.get_handle()
       }
    }
 
@@ -204,6 +208,10 @@ mod sync {
 
       pub fn lock_mut(&self) -> Option<Guard<TxBufInner>> {
          self.0.try_lock()
+      }
+
+      pub fn get_handle(&self) -> LockHandle<TxBufInner> {
+         self.0.get_handle()
       }
    }
 }
