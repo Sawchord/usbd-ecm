@@ -23,6 +23,12 @@ fn main() {
       .product("Ethernet Loopback Device")
       .serial_number("TEST")
       .device_class(USB_CLASS_CDC)
+      // NOTE: This is needed due to a bug.
+      // I am not sure, wether the bug is in usb-device of usbip-device though.
+      // The bug triggers a get_string, before the second one is transmitted.
+      // This triggers the string being garbled which in turn triggers `cdc_ether`
+      // to reject the device.
+      .max_packet_size_0(64)
       .build();
 
    let mut data = [0; ETH_FRAME_SIZE];
@@ -36,6 +42,8 @@ fn main() {
          None => continue,
          Some(bytes_read) => bytes_read,
       };
+
+      log::debug!("Received data: {:?}", &data[..bytes_read]);
 
       // Try to send back the data
       loop {
