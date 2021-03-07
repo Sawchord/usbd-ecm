@@ -6,18 +6,47 @@
 //! This lock only supports two accesors, and both have to be created in the same moment.
 
 use core::{
-   cell::UnsafeCell,
+   marker::PhantomData,
    ops::{Deref, DerefMut},
 };
 
 #[derive(Debug)]
+pub struct Lock<'a, T> {
+   data: T,
+   lock: LockInner<'a, T>,
+}
+
+impl<'a, T> Lock<'a, T> {
+   pub fn new(data: T) -> (Self, LockInner<'a, T>) {
+      let ptr = &data as *const T as *mut T;
+      let (this, other) = LockInner::new(ptr);
+
+      (Self { data, lock: this }, other)
+   }
+
+   pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
+      self.lock.try_lock()
+   }
+}
+
+#[derive(Debug)]
 pub struct LockInner<'a, T> {
-   data: &'a UnsafeCell<T>,
+   lt: &'a PhantomData<()>,
+   data: *mut T,
 }
 
 impl<'a, T> LockInner<'a, T> {
-   pub fn new(data: &'a UnsafeCell<T>) -> (Self, Self) {
-      (Self { data }, Self { data })
+   pub fn new(data: *mut T) -> (Self, Self) {
+      (
+         Self {
+            lt: &PhantomData,
+            data,
+         },
+         Self {
+            lt: &PhantomData,
+            data,
+         },
+      )
    }
 
    pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
@@ -34,13 +63,13 @@ pub struct Guard<'a, T> {
 impl<'a, T> Deref for Guard<'a, T> {
    type Target = T;
    fn deref(&self) -> &T {
-      unsafe { &*self.lock.data.get() }
+      unsafe { &*self.lock.data }
    }
 }
 
 impl<'a, T> DerefMut for Guard<'a, T> {
    fn deref_mut(&mut self) -> &mut T {
-      unsafe { &mut *self.lock.data.get() }
+      unsafe { &mut *self.lock.data }
    }
 }
 
