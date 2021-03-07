@@ -16,7 +16,7 @@ fn main() {
 
    log::info!("initializing allocator");
    let bus_allocator = UsbBusAllocator::new(UsbIpBus::new());
-   let mut usb_eth = UsbEthernetDevice::new(&bus_allocator, &[12, 13, 14, 15, 16, 17]);
+   let mut usb_eth = UsbEthernetDevice::new(&bus_allocator, &[1, 2, 3, 4, 5, 6]);
 
    let mut usb_bus = UsbDeviceBuilder::new(&bus_allocator, UsbVidPid(0x16c0, 0x05e1))
       .manufacturer("Fake company")

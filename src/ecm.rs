@@ -178,19 +178,19 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
 
         match req.request {
             REQ_GET_ENCAPSULATED_COMMAND => {
-                log::error!("encapsulated commands are not supported");
+                log::debug!("encapsulated commands are not supported");
                 xfer.reject().ok();
             }
             GET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER => {
-                log::error!("power management not supported");
+                log::debug!("power management not supported");
                 xfer.reject().ok();
             }
             GET_ETHERNET_STATISTICS => {
-                log::error!("statistics not supported");
+                log::debug!("statistics not supported");
                 xfer.reject().ok();
             }
             _ => {
-                log::error!("rejecting unkown IN request code {}", req.request);
+                log::debug!("rejecting unkown IN request code {}", req.request);
                 xfer.reject().ok();
             }
         }
@@ -204,24 +204,24 @@ impl<B: UsbBus> UsbClass<B> for CdcEcmClass<'_, B> {
 
         match req.request {
             REQ_SEND_ENCAPSULATED_COMMAND => {
-                log::error!("encapsulated commands are not supported");
+                log::debug!("encapsulated commands are not supported");
                 xfer.reject().ok();
             }
             SET_ETHERNET_MULTICAST_FILTERS => {
                 // TODO: Implement this mandatory feature
-                log::error!("ethernet multicast filters are not supported");
+                log::debug!("ethernet multicast filters are not supported");
                 xfer.reject().ok();
             }
             SET_ETHERNET_PACKET_FILTER => {
-                log::error!("ethernet packet filters are not supported");
+                log::debug!("ethernet packet filters are not supported");
                 xfer.reject().ok();
             }
             SET_ETHERNET_POWER_MANAGEMENT_PATTERN_FILTER => {
-                log::error!("power management not supported");
+                log::debug!("power management not supported");
                 xfer.reject().ok();
             }
             _ => {
-                log::error!("rejecting unkown OUT request code {}", req.request);
+                log::debug!("rejecting unkown OUT request code {}", req.request);
                 xfer.reject().ok();
             }
         }
