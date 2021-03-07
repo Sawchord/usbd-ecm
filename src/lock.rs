@@ -17,18 +17,16 @@ pub struct Lock<T>(LockInner<T>);
 
 impl<T> Lock<T> {
    pub fn new(data: T) -> Self {
-      let inner = LockInner::new(data);
-      Self(inner)
+      Self(LockInner::new(data))
    }
 
-   #[allow(dead_code)]
-   pub fn get_handle<'a>(&'a self) -> LockHandle<'a, T> {
+   pub fn get_handle(&self) -> LockHandle<T> {
       LockHandle::new(self.0.as_ptr())
    }
 
-   // pub fn try_lock<'a>(&'a mut self) -> Option<Guard<'a, T>> {
-   //    self.get_handle().try_lock()
-   // }
+   pub fn try_lock(&self) -> Option<Guard<T>> {
+      self.0.try_lock()
+   }
 }
 
 #[derive(Debug)]
@@ -45,17 +43,9 @@ impl<'a, T> LockHandle<'a, T> {
       }
    }
 
-   pub fn try_lock(&'a mut self) -> Option<Guard<'a, T>> {
+   pub fn try_lock(&'a self) -> Option<Guard<'a, T>> {
       let inner: &mut LockInner<T> = unsafe { &mut *self.inner };
-
-      let was_locked = inner
-         .lock
-         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
-
-      match was_locked {
-         Ok(false) => Some(Guard { lock: self }),
-         _ => None,
-      }
+      inner.try_lock()
    }
 }
 
@@ -84,32 +74,41 @@ impl<T> LockInner<T> {
 }
 
 impl<T> LockInner<T> {
+   fn try_lock(&self) -> Option<Guard<T>> {
+      let was_locked = self
+         .lock
+         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+
+      match was_locked {
+         Ok(false) => Some(Guard(LockHandle::new(self.as_ptr()))),
+         _ => None,
+      }
+   }
+
    fn as_ptr(&self) -> *mut Self {
       self as *const Self as *mut Self
    }
 }
 
 #[derive(Debug)]
-pub struct Guard<'a, T> {
-   lock: &'a mut LockHandle<'a, T>,
-}
+pub struct Guard<'a, T>(LockHandle<'a, T>);
 
 impl<'a, T> Deref for Guard<'a, T> {
    type Target = T;
    fn deref(&self) -> &T {
-      &unsafe { &*self.lock.inner }.data
+      &unsafe { &*self.0.inner }.data
    }
 }
 
-impl<'a, T> DerefMut for Guard<'a, T> {
+impl<T> DerefMut for Guard<'_, T> {
    fn deref_mut(&mut self) -> &mut T {
-      &mut unsafe { &mut *self.lock.inner }.data
+      &mut unsafe { &mut *self.0.inner }.data
    }
 }
 
-impl<'a, T> Drop for Guard<'a, T> {
+impl<T> Drop for Guard<'_, T> {
    fn drop(&mut self) {
-      let inner: &mut LockInner<T> = unsafe { &mut *self.lock.inner };
+      let inner: &mut LockInner<T> = unsafe { &mut *self.0.inner };
       inner.lock.store(false, Ordering::SeqCst);
    }
 }

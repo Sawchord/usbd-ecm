@@ -145,26 +145,27 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             return false;
         }
 
-        let buf = match self.tx_buf.lock_mut() {
-            None => return false,
-            Some(buf) => buf,
+        #[allow(unused_mut)]
+        let result = match self.tx_buf.lock_mut() {
+            None => false,
+            Some(mut buf) => match buf.try_send_frame(len) {
+                None => false,
+                Some(buf) => {
+                    f(buf);
+                    true
+                }
+            },
         };
 
-        match buf.try_send_frame(len) {
-            None => false,
-            Some(buf) => {
-                f(buf);
-
-                // Trigger sending the first packet
-                self.try_send();
-                true
-            }
-        }
+        // Trigger sending the first packet
+        self.try_send();
+        result
     }
 
     /// Attempts to write data out to the host from tx_buf
     fn try_send(&mut self) {
-        let buf = match self.tx_buf.lock_mut() {
+        #[allow(unused_mut)]
+        let mut buf = match self.tx_buf.lock_mut() {
             None => return,
             Some(buf) => buf,
         };
@@ -185,12 +186,12 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             Ok(bytes_written) if pkg.len() == bytes_written => buf.advance(bytes_written),
             Ok(bytes_written) => {
                 log::error!("wrote {} bytes, expected {}", bytes_written, pkg.len());
-                self.reset();
+                //self.reset();
             }
             Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
             Err(err) => {
                 log::error!("received unexpected error {:?}", err);
-                self.reset();
+                //self.reset();
             }
         }
     }

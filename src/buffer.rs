@@ -184,27 +184,26 @@ mod sync {
          }))
       }
 
-      pub fn lock_mut<'a>(&'a mut self) -> Option<Guard<'a, RxBufInner>> {
-         todo!()
-         //self.0.try_lock()
+      pub fn lock_mut(&self) -> Option<Guard<RxBufInner>> {
+         self.0.try_lock()
       }
    }
 
    /// Stucture holds and manages the send side
-   #[derive(Debug, Clone)]
-   pub struct TxBuf(TxBufInner);
+   #[derive(Debug)]
+   pub struct TxBuf(Lock<TxBufInner>);
 
    impl TxBuf {
       pub fn new() -> Self {
-         Self(TxBufInner {
+         Self(Lock::new(TxBufInner {
             buf: [0; ETH_FRAME_SIZE],
             idx: 0,
             len: 0,
-         })
+         }))
       }
 
-      pub fn lock_mut(&mut self) -> Option<&mut TxBufInner> {
-         Some(&mut self.0)
+      pub fn lock_mut(&self) -> Option<Guard<TxBufInner>> {
+         self.0.try_lock()
       }
    }
 }
