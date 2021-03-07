@@ -1,4 +1,5 @@
-//! This module contains an implementation of Pettersons Algorithm
+//! This module contains very basic lock implementation based on atomic bool.
+//!
 //! This is needed to allow to synchronize the `usb-device` and `smoltcp` sides
 //! of this crate with each other.
 //!
@@ -8,20 +9,28 @@
 use core::{
    marker::PhantomData,
    ops::{Deref, DerefMut},
+   sync::atomic::{AtomicBool, Ordering},
 };
 
 #[derive(Debug)]
 pub struct Lock<'a, T> {
-   data: T,
-   lock: LockInner<'a, T>,
+   inner: LockInner<T>,
+   lock: LockHandle<'a, T>,
 }
 
 impl<'a, T> Lock<'a, T> {
-   pub fn new(data: T) -> (Self, LockInner<'a, T>) {
-      let ptr = &data as *const T as *mut T;
-      let (this, other) = LockInner::new(ptr);
+   pub fn new(data: T) -> Self {
+      let inner = LockInner::new(data);
+      let ptr = &inner as *const LockInner<T> as *mut LockInner<T>;
 
-      (Self { data, lock: this }, other)
+      Self {
+         inner,
+         lock: LockHandle::new(ptr),
+      }
+   }
+
+   pub fn get_handle(&self) -> LockHandle<'a, T> {
+      self.lock.clone()
    }
 
    pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
@@ -30,51 +39,71 @@ impl<'a, T> Lock<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct LockInner<'a, T> {
+pub struct LockHandle<'a, T> {
    lt: &'a PhantomData<()>,
-   data: *mut T,
+   inner: *mut LockInner<T>,
 }
 
-impl<'a, T> LockInner<'a, T> {
-   pub fn new(data: *mut T) -> (Self, Self) {
-      (
-         Self {
-            lt: &PhantomData,
-            data,
-         },
-         Self {
-            lt: &PhantomData,
-            data,
-         },
-      )
+impl<'a, T> LockHandle<'a, T> {
+   pub fn new(inner: *mut LockInner<T>) -> Self {
+      Self {
+         lt: &PhantomData,
+         inner,
+      }
    }
 
    pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
-      // TODO: Lock logic
+      let inner: &mut LockInner<T> = unsafe { &mut *self.inner };
+
       todo!()
+   }
+}
+
+impl<'a, T> Clone for LockHandle<'a, T> {
+   fn clone(&self) -> Self {
+      Self {
+         lt: &PhantomData,
+         inner: self.inner,
+      }
+   }
+}
+
+#[derive(Debug)]
+pub struct LockInner<T> {
+   lock: AtomicBool,
+   data: T,
+}
+
+impl<T> LockInner<T> {
+   fn new(data: T) -> Self {
+      Self {
+         lock: AtomicBool::new(false),
+         data,
+      }
    }
 }
 
 #[derive(Debug)]
 pub struct Guard<'a, T> {
-   lock: &'a mut LockInner<'a, T>,
+   lock: &'a mut LockHandle<'a, T>,
 }
 
 impl<'a, T> Deref for Guard<'a, T> {
    type Target = T;
    fn deref(&self) -> &T {
-      unsafe { &*self.lock.data }
+      &unsafe { &*self.lock.inner }.data
    }
 }
 
 impl<'a, T> DerefMut for Guard<'a, T> {
    fn deref_mut(&mut self) -> &mut T {
-      unsafe { &mut *self.lock.data }
+      &mut unsafe { &mut *self.lock.inner }.data
    }
 }
 
 impl<'a, T> Drop for Guard<'a, T> {
    fn drop(&mut self) {
-      // TODO: Unlock logic
+      let inner: &mut LockInner<T> = unsafe { &mut *self.lock.inner };
+      inner.lock.store(false, Ordering::SeqCst);
    }
 }
