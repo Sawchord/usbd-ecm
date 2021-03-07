@@ -13,29 +13,22 @@ use core::{
 };
 
 #[derive(Debug)]
-pub struct Lock<'a, T> {
-   inner: LockInner<T>,
-   lock: LockHandle<'a, T>,
-}
+pub struct Lock<T>(LockInner<T>);
 
-impl<'a, T> Lock<'a, T> {
+impl<T> Lock<T> {
    pub fn new(data: T) -> Self {
       let inner = LockInner::new(data);
-      let ptr = &inner as *const LockInner<T> as *mut LockInner<T>;
-
-      Self {
-         inner,
-         lock: LockHandle::new(ptr),
-      }
+      Self(inner)
    }
 
-   pub fn get_handle(&self) -> LockHandle<'a, T> {
-      self.lock.clone()
+   #[allow(dead_code)]
+   pub fn get_handle<'a>(&'a self) -> LockHandle<'a, T> {
+      LockHandle::new(self.0.as_ptr())
    }
 
-   pub fn try_lock(&'a mut self) -> Option<Guard<'a, T>> {
-      self.lock.try_lock()
-   }
+   // pub fn try_lock<'a>(&'a mut self) -> Option<Guard<'a, T>> {
+   //    self.get_handle().try_lock()
+   // }
 }
 
 #[derive(Debug)]
@@ -87,6 +80,12 @@ impl<T> LockInner<T> {
          lock: AtomicBool::new(false),
          data,
       }
+   }
+}
+
+impl<T> LockInner<T> {
+   fn as_ptr(&self) -> *mut Self {
+      self as *const Self as *mut Self
    }
 }
 

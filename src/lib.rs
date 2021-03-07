@@ -18,6 +18,9 @@ pub(crate) mod ecm;
 #[cfg(feature = "smoltcp")]
 pub(crate) mod lock;
 
+#[cfg(feature = "smoltcp")]
+pub(crate) mod smoltcp;
+
 // We support both USB 1.1 packets with a size of 64 bytes
 // as well as USB 2.0 packets with a size of 512 bytes.
 // It is hardware dependent, wether the larger size is actually supported.
@@ -39,7 +42,7 @@ pub const ETH_FRAME_SIZE: usize = 1514;
 pub const USB_CLASS_CDC: u8 = 0x02;
 
 /// An implementation of [`UsbClass`]()
-// TODO
+// TODO: Documentation
 pub struct UsbEthernetDevice<'a, B: UsbBus> {
     ecm: CdcEcmClass<'a, B>,
     tx_buf: TxBuf,
@@ -75,7 +78,8 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
     where
         F: FnOnce(&[u8]),
     {
-        let buf = match self.rx_buf.lock_mut() {
+        #[allow(unused_mut)]
+        let mut buf = match self.rx_buf.lock_mut() {
             None => return None,
             Some(buf) => buf,
         };
@@ -95,7 +99,8 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
 
     /// Attempts to receive data into rx_buf
     fn try_recv(&mut self) {
-        let buf = match self.rx_buf.lock_mut() {
+        #[allow(unused_mut)]
+        let mut buf = match self.rx_buf.lock_mut() {
             None => return,
             Some(buf) => buf,
         };
@@ -119,7 +124,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
             Err(err) => {
                 log::error!("unexpected usb error: {:?}", err);
-                self.reset();
+                //self.reset();
             }
         }
     }
