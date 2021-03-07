@@ -33,7 +33,7 @@ impl<'a, T> Lock<'a, T> {
       self.lock.clone()
    }
 
-   pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
+   pub fn try_lock(&'a mut self) -> Option<Guard<'a, T>> {
       self.lock.try_lock()
    }
 }
@@ -52,10 +52,17 @@ impl<'a, T> LockHandle<'a, T> {
       }
    }
 
-   pub fn try_lock(&mut self) -> Option<Guard<'a, T>> {
+   pub fn try_lock(&'a mut self) -> Option<Guard<'a, T>> {
       let inner: &mut LockInner<T> = unsafe { &mut *self.inner };
 
-      todo!()
+      let was_locked = inner
+         .lock
+         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
+
+      match was_locked {
+         Ok(false) => Some(Guard { lock: self }),
+         _ => None,
+      }
    }
 }
 
