@@ -1,6 +1,6 @@
 #![no_std]
 
-use crate::ecm::CdcEcmClass;
+use crate::{buffer::RxBuf, ecm::CdcEcmClass};
 use usb_device::{
     bus::{StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
@@ -9,6 +9,7 @@ use usb_device::{
     Result as UsbResult, UsbError,
 };
 
+pub(crate) mod buffer;
 pub(crate) mod ecm;
 
 // We support both USB 1.1 packets with a size of 64 bytes
@@ -38,9 +39,7 @@ pub struct UsbEthernetDevice<'a, B: UsbBus> {
     tx_buf: [u8; ETH_FRAME_SIZE],
     tx_idx: usize,
     tx_len: usize,
-    rx_buf: [u8; ETH_FRAME_SIZE],
-    rx_idx: usize,
-    rx_complete: bool,
+    rx_buf: RxBuf,
 }
 
 impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
@@ -51,15 +50,16 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             tx_buf: [0; ETH_FRAME_SIZE],
             tx_idx: 0,
             tx_len: 0,
-            rx_buf: [0; ETH_FRAME_SIZE],
-            rx_idx: 0,
-            rx_complete: false,
+            rx_buf: RxBuf::new(),
         }
     }
 
     /// Check, wether an ethernet frame is ready to be received
-    pub fn frame_ready(&self) -> bool {
-        self.rx_complete
+    pub fn frame_ready(&mut self) -> bool {
+        match self.rx_buf.lock_mut() {
+            None => false,
+            Some(buf) => buf.frame_complete(),
+        }
     }
 
     /// Tries to receive an ethernet frame.
@@ -73,42 +73,44 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
     where
         F: FnOnce(&[u8]),
     {
-        if self.rx_complete {
-            let idx = self.rx_idx;
-            f(&self.rx_buf[..idx]);
-            self.rx_idx = 0;
+        let buf = match self.rx_buf.lock_mut() {
+            None => return None,
+            Some(buf) => buf,
+        };
 
-            self.rx_complete = false;
-            Some(idx)
-        } else {
-            None
+        match buf.try_get_frame() {
+            None => None,
+            Some(frame) => {
+                let len = frame.len();
+                f(frame);
+
+                // Reset the buffer after reading it
+                buf.reset();
+                Some(len)
+            }
         }
     }
 
     /// Attempts to receive data into rx_buf
     fn try_recv(&mut self) {
+        let buf = match self.rx_buf.lock_mut() {
+            None => return,
+            Some(buf) => buf,
+        };
+
         // Do not receive if there is an ethernet packet waiting
         // The pipe will stall until the ethernet packet gets processed.
-        if self.rx_complete {
+        if buf.frame_complete() {
             return;
         }
 
-        let idx = self.rx_idx;
-        match self.ecm.get_read_ep().read(&mut self.rx_buf[idx..]) {
-            Ok(bytes_read) => {
-                // Advance the index into the reveive buffer
-                self.rx_idx += bytes_read;
-
-                // If the received packet is short, the packet was
-                // received completely
-                if bytes_read < EP_PKG_USIZE {
-                    self.rx_complete = true;
-                }
-            }
+        //let idx = self.rx_idx;
+        match self.ecm.get_read_ep().read(buf.insert()) {
+            Ok(bytes_read) => buf.advance(bytes_read),
             // This can only be triggered by a a host ingoring our boundaries
             Err(UsbError::BufferOverflow) => {
                 log::warn!("received more data than fits in one ethernet packet, dropping packet");
-                self.rx_idx = 0;
+                buf.reset();
             }
             // If busy, try again later
             // FIXME: Should be possible to trigger this, remove?
@@ -182,7 +184,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
         let idx_end = idx + bytes_to_send;
 
         match self.ecm.get_write_ep().write(&self.tx_buf[idx..idx_end]) {
-            Ok(bytes_written) if bytes_to_send == bytes_to_send => {
+            Ok(bytes_written) if bytes_to_send == bytes_written => {
                 self.tx_idx += bytes_written;
 
                 // End the transaction here, because we have sent a short byte
