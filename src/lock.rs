@@ -62,6 +62,8 @@ impl<'a, T> Clone for LockHandle<'a, T> {
 pub struct LockInner<T> {
    lock: AtomicBool,
    data: T,
+   // This is to make LockInner `!Send` and `!Sync`.
+   unsend: *const PhantomData<()>,
 }
 
 impl<T> LockInner<T> {
@@ -69,6 +71,7 @@ impl<T> LockInner<T> {
       Self {
          lock: AtomicBool::new(false),
          data,
+         unsend: &PhantomData as *const PhantomData<()>,
       }
    }
 }
