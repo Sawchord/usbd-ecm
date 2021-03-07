@@ -25,7 +25,7 @@ impl RxBufInner {
    }
 
    /// If a frame is ready, it is returned.
-   /// Reutrns `None` oterhwise
+   /// Returns `None` oterhwise
    pub fn try_get_frame(&self) -> Option<&[u8]> {
       match self.frame_complete() {
          false => None,
