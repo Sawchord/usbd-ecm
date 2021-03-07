@@ -1,6 +1,9 @@
 #![no_std]
 
-use crate::{buffer::RxBuf, ecm::CdcEcmClass};
+use crate::{
+    buffer::{RxBuf, TxBuf},
+    ecm::CdcEcmClass,
+};
 use usb_device::{
     bus::{StringIndex, UsbBus, UsbBusAllocator},
     class::{ControlIn, ControlOut, UsbClass},
@@ -36,9 +39,7 @@ pub const USB_CLASS_CDC: u8 = 0x02;
 // TODO
 pub struct UsbEthernetDevice<'a, B: UsbBus> {
     ecm: CdcEcmClass<'a, B>,
-    tx_buf: [u8; ETH_FRAME_SIZE],
-    tx_idx: usize,
-    tx_len: usize,
+    tx_buf: TxBuf,
     rx_buf: RxBuf,
 }
 
@@ -47,9 +48,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
     pub fn new(alloc: &'a UsbBusAllocator<B>, mac_addr: &[u8; 6]) -> Self {
         Self {
             ecm: CdcEcmClass::new(alloc, mac_addr),
-            tx_buf: [0; ETH_FRAME_SIZE],
-            tx_idx: 0,
-            tx_len: 0,
+            tx_buf: TxBuf::new(),
             rx_buf: RxBuf::new(),
         }
     }
@@ -104,8 +103,8 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             return;
         }
 
-        //let idx = self.rx_idx;
-        match self.ecm.get_read_ep().read(buf.insert()) {
+        // Read a packet from the host
+        match self.ecm.get_read_ep().read(buf.insert_packet()) {
             Ok(bytes_read) => buf.advance(bytes_read),
             // This can only be triggered by a a host ingoring our boundaries
             Err(UsbError::BufferOverflow) => {
@@ -124,7 +123,7 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
 
     /// Tries to send an ethernet frame
     ///
-    /// If the device is ready to send a frame, the closue is executed to allow to copy in the bytes.
+    /// If the device is ready to send a frame, the closure is executed to allow copying in the bytes.
     ///
     /// # Returns
     /// - `true`, if the packet was sent
@@ -138,63 +137,46 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
             return false;
         }
 
-        // Check that we are currently not in the process of sending another frame
-        if self.tx_len != 0 {
-            return false;
+        let buf = match self.tx_buf.lock_mut() {
+            None => return false,
+            Some(buf) => buf,
+        };
+
+        match buf.try_send_frame(len) {
+            None => false,
+            Some(buf) => {
+                f(buf);
+
+                // Trigger sending the first packet
+                self.try_send();
+                true
+            }
         }
-
-        f(&mut self.tx_buf[..len]);
-
-        self.tx_idx = 0;
-        self.tx_len = len;
-
-        self.try_send();
-        true
     }
 
     /// Attempts to write data out to the host from tx_buf
     fn try_send(&mut self) {
+        let buf = match self.tx_buf.lock_mut() {
+            None => return,
+            Some(buf) => buf,
+        };
+
         // Skip if there is no data to send
-        if self.tx_len == 0 {
+        if !buf.is_sending() {
             return;
         }
 
-        // If we have already send everything and ended directly on the
-        // packet size, we need to send an empty packet
-        if self.tx_len == self.tx_idx {
-            match self.ecm.get_write_ep().write(&[]) {
-                Ok(_) => {
-                    // Sending of frame complete, reset transmit part
-                    self.tx_len = 0;
-                    self.tx_idx = 0;
-                }
-                Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
-                Err(err) => {
-                    log::error!("received unexpected error {:?}", err);
-                    self.reset();
-                }
-            }
+        // Retreive the packet
+        let pkg = match buf.try_get_packet() {
+            None => return,
+            Some(pkg) => pkg,
+        };
 
-            return;
-        }
-
-        // Otherwise, calculate the section to send
-        let bytes_to_send = EP_PKG_USIZE.min(self.tx_len - self.tx_idx);
-        let idx = self.tx_idx;
-        let idx_end = idx + bytes_to_send;
-
-        match self.ecm.get_write_ep().write(&self.tx_buf[idx..idx_end]) {
-            Ok(bytes_written) if bytes_to_send == bytes_written => {
-                self.tx_idx += bytes_written;
-
-                // End the transaction here, because we have sent a short byte
-                if bytes_written < EP_PKG_USIZE {
-                    self.tx_idx = 0;
-                    self.tx_len = 0;
-                }
-            }
+        // Send the packet to the host
+        match self.ecm.get_write_ep().write(pkg) {
+            Ok(bytes_written) if pkg.len() == bytes_written => buf.advance(bytes_written),
             Ok(bytes_written) => {
-                log::error!("wrote {} bytes, expected {}", bytes_written, bytes_to_send);
+                log::error!("wrote {} bytes, expected {}", bytes_written, pkg.len());
                 self.reset();
             }
             Err(UsbError::WouldBlock) => log::warn!("would block should not be able to happen"),
@@ -203,7 +185,6 @@ impl<'a, B: UsbBus> UsbEthernetDevice<'a, B> {
                 self.reset();
             }
         }
-        todo!()
     }
 }
 
